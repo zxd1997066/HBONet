@@ -109,25 +109,13 @@ parser.add_argument('--input-size', type=int, default=224, help='MobileNet model
 parser.add_argument('--weight', default='', type=str, metavar='WEIGHT',
                     help='path to pretrained weight (default: none)')
 
-# for oob
-parser.add_argument('--device', type=str, default='cpu', help='device')
-parser.add_argument('--precision', type=str, default='float32', help='precision')
-parser.add_argument('--channels_last', type=int, default=1, help='use channels last format')
-# parser.add_argument('--batch_size', type=int, default=1, help='batch_size')
-parser.add_argument('--num_iter', type=int, default=-1, help='num_iter')
-parser.add_argument('--num_warmup', type=int, default=-1, help='num_warmup')
-parser.add_argument('--profile', dest='profile', action='store_true', help='profile')
-parser.add_argument('--quantized_engine', type=str, default=None, help='quantized_engine')
-parser.add_argument('--ipex', dest='ipex', action='store_true', help='ipex')
-parser.add_argument('--jit', dest='jit', action='store_true', help='jit')
 
 best_prec1 = 0
 
 
 def main():
-    global args, best_prec1, device
+    global args, best_prec1
     args = parser.parse_args()
-    device = torch.device(args.device)
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -152,15 +140,15 @@ def main():
     if not args.distributed:
         if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
             model.features = torch.nn.DataParallel(model.features)
-            model.to(device)
+            model.cuda()
         else:
-            model = torch.nn.DataParallel(model).to(device)
+            model = torch.nn.DataParallel(model).cuda()
     else:
-        model.to(device)
+        model.cuda()
         model = torch.nn.parallel.DistributedDataParallel(model)
 
     # define loss function (criterion) and optimizer
-    criterion = nn.CrossEntropyLoss().to(device)
+    criterion = nn.CrossEntropyLoss().cuda()
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
@@ -210,7 +198,7 @@ def main():
         from collections import OrderedDict
         if os.path.isfile(args.weight):
             print("=> loading pretrained weight '{}'".format(args.weight))
-            source_state = torch.load(args.weight, map_location='cpu')
+            source_state = torch.load(args.weight)
             target_state = OrderedDict()
             for k, v in source_state.items():
                 if k[:7] != 'module.':
@@ -220,53 +208,7 @@ def main():
         else:
             print("=> no weight found at '{}'".format(args.weight))
 
-        def trace_handler(p):
-            output = p.key_averages().table(sort_by="self_cpu_time_total")
-            print(output)
-            import pathlib
-            timeline_dir = str(pathlib.Path.cwd()) + '/timeline/'
-            if not os.path.exists(timeline_dir):
-                try:
-                    os.makedirs(timeline_dir)
-                except:
-                    pass
-            timeline_file = timeline_dir + 'timeline-' + str(torch.backends.quantized.engine) + '-' + \
-                        'hbonet-' + str(p.step_num) + '-' + str(os.getpid()) + '.json'
-            p.export_chrome_trace(timeline_file)
-
-        if args.profile:
-            with torch.profiler.profile(
-                activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
-                record_shapes=True,
-                schedule=torch.profiler.schedule(
-                    wait=int(args.num_iter/2),
-                    warmup=2,
-                    active=1,
-                ),
-                on_trace_ready=trace_handler,
-            ) as p:
-                args.p = p
-                if args.precision == "bfloat16":
-                    print('---- Enable AMP bfloat16')
-                    with torch.cpu.amp.autocast(enabled=True, dtype=torch.bfloat16):
-                        validate(val_loader, val_loader_len, model, criterion)
-                elif args.precision == "float16":
-                    print('---- Enable AMP float16')
-                    with torch.cuda.amp.autocast(enabled=True, dtype=torch.float16):
-                        validate(val_loader, val_loader_len, model, criterion)
-                else:
-                    validate(val_loader, val_loader_len, model, criterion)
-        else:
-            if args.precision == "bfloat16":
-                print('---- Enable AMP bfloat16')
-                with torch.cpu.amp.autocast(enabled=True, dtype=torch.bfloat16):
-                    validate(val_loader, val_loader_len, model, criterion)
-            elif args.precision == "float16":
-                print('---- Enable AMP float16')
-                with torch.cuda.amp.autocast(enabled=True, dtype=torch.float16):
-                    validate(val_loader, val_loader_len, model, criterion)
-            else:
-                validate(val_loader, val_loader_len, model, criterion)
+        validate(val_loader, val_loader_len, model, criterion)
         return
 
     # visualization
@@ -332,7 +274,7 @@ def train(train_loader, train_loader_len, model, criterion, optimizer, epoch):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        target = target.to(device)
+        target = target.cuda(non_blocking=True)
 
         # compute output
         output = model(input)
@@ -380,37 +322,20 @@ def validate(val_loader, val_loader_len, model, criterion):
     top5 = AverageMeter()
 
     # switch to evaluate mode
-    model.eval().to(device)
-    # NHWC
-    if args.channels_last:
-        model = model.to(memory_format=torch.channels_last)
-        print("---- Use NHWC model")
-    total_time = 0.0
-    total_sample = 0
+    model.eval()
+
     end = time.time()
     for i, (input, target) in enumerate(val_loader):
-        if args.num_iter > 0 and i >= args.num_iter: break
         # measure data loading time
         data_time.update(time.time() - end)
-        if args.channels_last:
-            input = input.contiguous(memory_format=torch.channels_last)
 
-        elapsed = time.time()
-        input = input.to(device)
-        target = target.to(device)
+        target = target.cuda(non_blocking=True)
 
         with torch.no_grad():
             # compute output
             output = model(input)
             loss = criterion(output, target)
-        if torch.cuda.is_available(): torch.cuda.synchronize()
-        elapsed = time.time() - elapsed
-        if args.profile:
-            args.p.step()
-        print("Iteration: {}, inference time: {} sec.".format(i, elapsed), flush=True)
-        if i >= args.num_warmup:
-            total_time += elapsed
-            total_sample += args.batch_size
+
         # measure accuracy and record loss
         prec1, prec5 = accuracy(output, target, topk=(1, 5))
         losses.update(loss.item(), input.size(0))
@@ -422,22 +347,18 @@ def validate(val_loader, val_loader_len, model, criterion):
         end = time.time()
 
         # plot progress
-        # bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
-        #             batch=i + 1,
-        #             size=val_loader_len,
-        #             data=data_time.avg,
-        #             bt=batch_time.avg,
-        #             total=bar.elapsed_td,
-        #             eta=bar.eta_td,
-        #             loss=losses.avg,
-        #             top1=top1.avg,
-        #             top5=top5.avg,
-        #             )
-        # bar.next()
-    throughput = total_sample / total_time
-    latency = total_time / total_sample * 1000
-    print('inference latency: %.3f ms' % latency)
-    print('inference Throughput: %f images/s' % throughput)
+        bar.suffix  = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
+                    batch=i + 1,
+                    size=val_loader_len,
+                    data=data_time.avg,
+                    bt=batch_time.avg,
+                    total=bar.elapsed_td,
+                    eta=bar.eta_td,
+                    loss=losses.avg,
+                    top1=top1.avg,
+                    top5=top5.avg,
+                    )
+        bar.next()
     bar.finish()
     return (losses.avg, top1.avg)
 
