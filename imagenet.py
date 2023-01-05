@@ -109,13 +109,14 @@ parser.add_argument('--input-size', type=int, default=224, help='MobileNet model
 parser.add_argument('--weight', default='', type=str, metavar='WEIGHT',
                     help='path to pretrained weight (default: none)')
 
-
+parser.add_argument('--device', type=str, default='cpu', help='device')
 best_prec1 = 0
 
 
 def main():
-    global args, best_prec1
+    global args, best_prec1, device
     args = parser.parse_args()
+    device = torch.device(args.device)
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -140,15 +141,15 @@ def main():
     if not args.distributed:
         if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
             model.features = torch.nn.DataParallel(model.features)
-            model.cuda()
+            model.to(device)
         else:
-            model = torch.nn.DataParallel(model).cuda()
+            model = torch.nn.DataParallel(model).to(device)
     else:
-        model.cuda()
+        model.to(device)
         model = torch.nn.parallel.DistributedDataParallel(model)
 
     # define loss function (criterion) and optimizer
-    criterion = nn.CrossEntropyLoss().cuda()
+    criterion = nn.CrossEntropyLoss().to(device)
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
@@ -198,7 +199,7 @@ def main():
         from collections import OrderedDict
         if os.path.isfile(args.weight):
             print("=> loading pretrained weight '{}'".format(args.weight))
-            source_state = torch.load(args.weight)
+            source_state = torch.load(args.weight, map_location=torch.device('cpu'))
             target_state = OrderedDict()
             for k, v in source_state.items():
                 if k[:7] != 'module.':
@@ -274,7 +275,7 @@ def train(train_loader, train_loader_len, model, criterion, optimizer, epoch):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        target = target.cuda(non_blocking=True)
+        target = target.to(device)
 
         # compute output
         output = model(input)
@@ -329,7 +330,8 @@ def validate(val_loader, val_loader_len, model, criterion):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        target = target.cuda(non_blocking=True)
+        input = input.to(device)
+        target = target.to(device)
 
         with torch.no_grad():
             # compute output
