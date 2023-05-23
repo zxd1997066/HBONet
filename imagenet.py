@@ -252,7 +252,7 @@ def main():
                         validate(val_loader, val_loader_len, model, criterion)
                 elif args.precision == "float16":
                     print('---- Enable AMP float16')
-                    with torch.cuda.amp.autocast(enabled=True, dtype=torch.float16):
+                    with torch.cpu.amp.autocast(enabled=True, dtype=torch.half):
                         validate(val_loader, val_loader_len, model, criterion)
                 else:
                     validate(val_loader, val_loader_len, model, criterion)
@@ -263,7 +263,7 @@ def main():
                     validate(val_loader, val_loader_len, model, criterion)
             elif args.precision == "float16":
                 print('---- Enable AMP float16')
-                with torch.cuda.amp.autocast(enabled=True, dtype=torch.float16):
+                with torch.cpu.amp.autocast(enabled=True, dtype=torch.half):
                     validate(val_loader, val_loader_len, model, criterion)
             else:
                 validate(val_loader, val_loader_len, model, criterion)
