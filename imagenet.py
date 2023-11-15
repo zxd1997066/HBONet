@@ -120,6 +120,10 @@ parser.add_argument('--profile', dest='profile', action='store_true', help='prof
 parser.add_argument('--quantized_engine', type=str, default=None, help='quantized_engine')
 parser.add_argument('--ipex', dest='ipex', action='store_true', help='ipex')
 parser.add_argument('--jit', dest='jit', action='store_true', help='jit')
+parser.add_argument("--compile", action='store_true', default=False,
+                    help="enable torch.compile")
+parser.add_argument("--backend", type=str, default='inductor',
+                    help="enable torch.compile backend")
 
 best_prec1 = 0
 
@@ -205,7 +209,8 @@ def main():
 
     train_loader, train_loader_len = get_train_loader(args.data, args.batch_size, workers=args.workers, input_size=args.input_size)
     val_loader, val_loader_len = get_val_loader(args.data, args.batch_size, workers=args.workers, input_size=args.input_size)
-
+    if args.compile:
+        model = torch.compile(model, backend=args.backend, options={"freezing": True})
     if args.evaluate:
         from collections import OrderedDict
         if os.path.isfile(args.weight):
