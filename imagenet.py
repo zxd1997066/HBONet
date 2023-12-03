@@ -209,8 +209,6 @@ def main():
 
     train_loader, train_loader_len = get_train_loader(args.data, args.batch_size, workers=args.workers, input_size=args.input_size)
     val_loader, val_loader_len = get_val_loader(args.data, args.batch_size, workers=args.workers, input_size=args.input_size)
-    if args.compile:
-        model = torch.compile(model, backend=args.backend, options={"freezing": True})
     if args.evaluate:
         from collections import OrderedDict
         if os.path.isfile(args.weight):
@@ -390,6 +388,8 @@ def validate(val_loader, val_loader_len, model, criterion):
     if args.channels_last:
         model = model.to(memory_format=torch.channels_last)
         print("---- Use NHWC model")
+    if args.compile:
+        model = torch.compile(model, backend=args.backend, options={"freezing": True})
     total_time = 0.0
     total_sample = 0
     end = time.time()
