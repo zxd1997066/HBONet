@@ -208,7 +208,7 @@ def main():
         get_val_loader = get_dali_val_loader()
 
     train_loader, train_loader_len = get_train_loader(args.data, args.batch_size, workers=args.workers, input_size=args.input_size)
-    val_loader, val_loader_len = get_val_loader(args.data, args.batch_size, workers=args.workers, input_size=args.input_size)
+    val_loader, val_loader_len = get_val_loader(args.data, args.batch_size, workers=args.workers, input_size=args.input_size, device=args.device)
     if args.evaluate:
         from collections import OrderedDict
         if os.path.isfile(args.weight):

@@ -183,7 +183,7 @@ def fast_collate(batch):
 
 
 class PrefetchedWrapper(object):
-    def prefetched_loader(loader):
+    def prefetched_loader(loader, device):
         mean = torch.tensor([0.485 * 255, 0.456 * 255, 0.406 * 255]).view(1,3,1,1)
         std = torch.tensor([0.229 * 255, 0.224 * 255, 0.225 * 255]).view(1,3,1,1)
 
@@ -192,10 +192,12 @@ class PrefetchedWrapper(object):
 
         for next_input, next_target in loader:
             with torch.cuda.stream(stream):
-                # next_input = next_input.cuda(async=True)
-                # next_target = next_target.cuda(async=True)
-                next_input = next_input.float()
-                next_input = next_input.sub_(mean).div_(std)
+                if device == "cuda":
+                    next_input = next_input.cuda(async=True)
+                    next_target = next_target.cuda(async=True)
+                else:
+                    next_input = next_input.float()
+                    next_input = next_input.sub_(mean).div_(std)
 
             if not first:
                 yield input, target
@@ -211,6 +213,7 @@ class PrefetchedWrapper(object):
     def __init__(self, dataloader):
         self.dataloader = dataloader
         self.epoch = 0
+        self.device = device
 
     def __iter__(self):
         if (self.dataloader.sampler is not None and
@@ -219,7 +222,7 @@ class PrefetchedWrapper(object):
 
             self.dataloader.sampler.set_epoch(self.epoch)
         self.epoch += 1
-        return PrefetchedWrapper.prefetched_loader(self.dataloader)
+        return PrefetchedWrapper.prefetched_loader(self.dataloader, self.device)
 
 def get_pytorch_train_loader(data_path, batch_size, workers=5, _worker_init_fn=None, input_size=224):
     traindir = os.path.join(data_path, 'train')
@@ -241,7 +244,7 @@ def get_pytorch_train_loader(data_path, batch_size, workers=5, _worker_init_fn=N
 
     return PrefetchedWrapper(train_loader), len(train_loader)
 
-def get_pytorch_val_loader(data_path, batch_size, workers=5, _worker_init_fn=None, input_size=224):
+def get_pytorch_val_loader(data_path, batch_size, workers=5, _worker_init_fn=None, input_size=224, device="cpu"):
     valdir = os.path.join(data_path, 'val')
     val_dataset = datasets.ImageFolder(
             valdir, transforms.Compose([
@@ -261,4 +264,4 @@ def get_pytorch_val_loader(data_path, batch_size, workers=5, _worker_init_fn=Non
             num_workers=workers, worker_init_fn=_worker_init_fn, pin_memory=True,
             collate_fn=fast_collate)
 
-    return PrefetchedWrapper(val_loader), len(val_loader)
+    return PrefetchedWrapper(val_loader, device), len(val_loader)
