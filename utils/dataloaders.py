@@ -193,8 +193,8 @@ class PrefetchedWrapper(object):
         for next_input, next_target in loader:
             with torch.cuda.stream(stream):
                 if device == "cuda":
-                    next_input = next_input.cuda(async=True)
-                    next_target = next_target.cuda(async=True)
+                    next_input = next_input.cuda()
+                    next_target = next_target.cuda()
                 else:
                     next_input = next_input.float()
                     next_input = next_input.sub_(mean).div_(std)
