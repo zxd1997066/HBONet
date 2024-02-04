@@ -210,7 +210,7 @@ class PrefetchedWrapper(object):
 
         yield input, target
 
-    def __init__(self, dataloader):
+    def __init__(self, dataloader, device):
         self.dataloader = dataloader
         self.epoch = 0
         self.device = device
