@@ -187,7 +187,10 @@ class PrefetchedWrapper(object):
         mean = torch.tensor([0.485 * 255, 0.456 * 255, 0.406 * 255]).view(1,3,1,1)
         std = torch.tensor([0.229 * 255, 0.224 * 255, 0.225 * 255]).view(1,3,1,1)
 
-        stream = torch.Stream()
+        if device == "cuda":
+            stream = torch.cuda.Stream()
+        else:
+            stream = torch.Stream()
         first = True
 
         for next_input, next_target in loader:
