@@ -124,7 +124,8 @@ parser.add_argument("--compile", action='store_true', default=False,
                     help="enable torch.compile")
 parser.add_argument("--backend", type=str, default='inductor',
                     help="enable torch.compile backend")
-
+parser.add_argument("--triton_cpu", action='store_true', default=False,
+                    help="enable triton_cpu")
 best_prec1 = 0
 
 
@@ -132,7 +133,10 @@ def main():
     global args, best_prec1, device
     args = parser.parse_args()
     device = torch.device(args.device)
-
+    if args.triton_cpu:
+        print("run with triton cpu backend")
+        import torch._inductor.config
+        torch._inductor.config.cpu_backend="triton"
     if args.seed is not None:
         random.seed(args.seed)
         torch.manual_seed(args.seed)
