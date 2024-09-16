@@ -130,6 +130,7 @@ best_prec1 = 0
 
 
 def main():
+    import torch
     global args, best_prec1, device
     args = parser.parse_args()
     device = torch.device(args.device)
